@@ -1,0 +1,6 @@
+@'
+# Intentional MVP exception:
+# Secure baseline uses SSE-S3 (AES256), not a customer-managed KMS key.
+# OPA will still require encryption to be configured.
+AWS-0132
+'@ | Set-Content .trivyignore
