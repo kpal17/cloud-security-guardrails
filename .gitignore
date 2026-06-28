@@ -21,3 +21,4 @@
 crash.log
 crash.*.log
 '@ | Set-Content ..\..\.gitignore
+insecure-input.json
