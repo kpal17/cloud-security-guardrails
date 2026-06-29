@@ -1,0 +1,111 @@
+name: Terraform Security Guardrails
+
+on:
+pull_request:
+branches: [main]
+push:
+branches: [main]
+
+permissions:
+contents: read
+
+jobs:
+validate:
+name: Validate Terraform and guardrails
+runs-on: ubuntu-latest
+
+```
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v6
+
+  - name: Set up Terraform
+    uses: hashicorp/setup-terraform@v4
+    with:
+      terraform_version: "1.14.6"
+      terraform_wrapper: false
+
+  - name: Check Terraform formatting
+    run: terraform fmt -check -recursive
+
+  - name: Initialize secure example
+    working-directory: examples/secure
+    run: terraform init -backend=false -input=false -no-color
+
+  - name: Validate secure example
+    working-directory: examples/secure
+    run: terraform validate -no-color
+
+  - name: Initialize insecure fixture
+    working-directory: examples/insecure
+    run: terraform init -backend=false -input=false -no-color
+
+  - name: Validate insecure fixture
+    working-directory: examples/insecure
+    run: terraform validate -no-color
+
+  - name: Scan secure baseline with Trivy
+    uses: aquasecurity/trivy-action@v0.36.0
+    with:
+      scan-type: config
+      scan-ref: ./examples/secure
+      scanners: misconfig
+      severity: HIGH,CRITICAL
+      exit-code: "1"
+      hide-progress: true
+      trivyignores: .trivyignore
+
+  - name: Install Conftest
+    env:
+      CONFTEST_VERSION: "0.68.2"
+      CONFTEST_SHA256: "08026fd5858d1c08556b50d5a43a8deb03d00b617d46f073a5528910ac0a3e46"
+    run: |
+      set -euo pipefail
+
+      archive="conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+      url="https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/${archive}"
+
+      curl --fail --location --silent --show-error \
+        --output "${archive}" \
+        "${url}"
+
+      echo "${CONFTEST_SHA256}  ${archive}" | sha256sum --check -
+
+      tar -xzf "${archive}" conftest
+      mkdir -p "${HOME}/.local/bin"
+      install -m 0755 conftest "${HOME}/.local/bin/conftest"
+      echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+      "${HOME}/.local/bin/conftest" --version
+
+  - name: Enforce policy on secure baseline
+    run: conftest test --policy ./policies ./infra/s3.tf
+
+  - name: Verify policy rejects insecure fixture
+    run: |
+      set +e
+      output="$(conftest test --policy ./policies ./examples/insecure/main.tf 2>&1)"
+      status=$?
+      set -e
+
+      printf '%s\n' "$output"
+
+      if [ "$status" -eq 0 ]; then
+        echo "::error::The intentionally insecure Terraform fixture passed policy checks."
+        exit 1
+      fi
+
+      for expected in \
+        "must not allow Principal" \
+        "must define aws_s3_bucket_versioning" \
+        "must define server-side encryption" \
+        "must set block_public_acls = true"
+      do
+        if ! grep -Fq "$expected" <<< "$output"; then
+          echo "::error::Expected policy failure was missing: $expected"
+          exit 1
+        fi
+      done
+
+      echo "Insecure fixture was rejected as expected."
+```
