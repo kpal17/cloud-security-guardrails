@@ -70,3 +70,19 @@ deny contains msg if {
 
   msg := "S3 buckets must define server-side encryption"
 }
+
+deny contains msg if {
+  some policy_name
+  policy := input.data.aws_iam_policy_document[policy_name][_]
+
+  statement := policy.statement[_]
+  statement.effect == "Allow"
+
+  principal := statement.principals[_]
+  principal.identifiers[_] == "*"
+
+  msg := sprintf(
+    "Policy document %q must not allow Principal \"*\" with Effect = \"Allow\"",
+    [policy_name],
+  )
+}
