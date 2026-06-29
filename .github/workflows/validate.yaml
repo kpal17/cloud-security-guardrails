@@ -14,7 +14,6 @@ validate:
 name: Validate Terraform and guardrails
 runs-on: ubuntu-latest
 
-```
 steps:
   - name: Checkout repository
     uses: actions/checkout@v6
@@ -108,4 +107,3 @@ steps:
       done
 
       echo "Insecure fixture was rejected as expected."
-```
