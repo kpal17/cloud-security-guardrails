@@ -1,0 +1,98 @@
+name: Deploy Secure S3 Baseline
+
+on:
+workflow_dispatch:
+inputs:
+apply:
+description: Apply the reviewed Terraform plan
+required: true
+default: false
+type: boolean
+
+permissions:
+contents: read
+id-token: write
+
+concurrency:
+group: secure-storage-deploy
+cancel-in-progress: false
+
+jobs:
+deploy:
+name: Plan or deploy secure S3 baseline
+if: github.ref == 'refs/heads/main'
+runs-on: ubuntu-latest
+timeout-minutes: 15
+
+```
+steps:
+  - name: Checkout repository
+    uses: actions/checkout@v6
+
+  - name: Set up Terraform
+    uses: hashicorp/setup-terraform@v4
+    with:
+      terraform_version: "1.14.6"
+      terraform_wrapper: false
+
+  - name: Configure AWS credentials through OIDC
+    uses: aws-actions/configure-aws-credentials@v6.2.0
+    with:
+      role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      aws-region: ${{ vars.AWS_REGION }}
+      role-session-name: gha-secure-storage-deploy
+      role-duration-seconds: 900
+      mask-aws-account-id: true
+
+  - name: Check Terraform formatting
+    run: terraform fmt -check -recursive
+
+  - name: Install Conftest
+    env:
+      CONFTEST_VERSION: "0.68.2"
+      CONFTEST_SHA256: "e8144c6d6d2ae0260b869caa60c7c262a1f95ac63ec1e5d2fb19be452d606347"
+    run: |
+      set -euo pipefail
+
+      archive="conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz"
+      url="https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/${archive}"
+
+      curl --fail --location --silent --show-error \
+        --output "${archive}" \
+        "${url}"
+
+      echo "${CONFTEST_SHA256}  ${archive}" | sha256sum --check -
+
+      tar -xzf "${archive}" conftest
+      mkdir -p "${HOME}/.local/bin"
+      install -m 0755 conftest "${HOME}/.local/bin/conftest"
+      echo "${HOME}/.local/bin" >> "${GITHUB_PATH}"
+
+  - name: Enforce policy on secure baseline
+    run: conftest test --policy ./policies ./infra/s3.tf
+
+  - name: Initialize remote Terraform state
+    working-directory: examples/secure
+    run: |
+      terraform init -input=false -no-color \
+        -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+        -backend-config="key=secure-storage/terraform.tfstate" \
+        -backend-config="region=${{ vars.AWS_REGION }}" \
+        -backend-config="encrypt=true" \
+        -backend-config="use_lockfile=true"
+
+  - name: Validate secure Terraform configuration
+    working-directory: examples/secure
+    run: terraform validate -no-color
+
+  - name: Create deployment plan
+    working-directory: examples/secure
+    run: |
+      terraform plan -input=false -no-color -out=tfplan
+      terraform show -no-color tfplan
+
+  - name: Apply reviewed plan
+    if: ${{ inputs.apply == true }}
+    working-directory: examples/secure
+    run: terraform apply -input=false -no-color tfplan
+```
