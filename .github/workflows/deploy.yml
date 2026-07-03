@@ -96,4 +96,3 @@ jobs:
         if: ${{ inputs.apply == true }}
         working-directory: examples/secure
         run: terraform apply -input=false -no-color tfplan
-'@ | Set-Content -Encoding utf8 .\.github\workflows\deploy.yml
