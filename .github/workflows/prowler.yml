@@ -33,9 +33,13 @@ jobs:
 
       - name: Run Prowler S3 scan
         run: |
+          set -euo pipefail
+
           mkdir -p prowler-output
+          chmod 0777 prowler-output
 
           docker run --rm \
+            --user 0:0 \
             --volume "$PWD/prowler-output:/home/prowler/output" \
             --env AWS_ACCESS_KEY_ID \
             --env AWS_SECRET_ACCESS_KEY \
