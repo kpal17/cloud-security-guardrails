@@ -1,0 +1,54 @@
+name: Prowler S3 Posture Scan
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: prowler-s3-scan
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: Scan deployed S3 posture
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v6.2.0
+        with:
+          role-to-assume: ${{ vars.AWS_AUDIT_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: gha-prowler-s3-audit
+          role-duration-seconds: 900
+          mask-aws-account-id: true
+
+      - name: Run Prowler S3 scan
+        run: |
+          mkdir -p prowler-output
+
+          docker run --rm \
+            --volume "$PWD/prowler-output:/home/prowler/output" \
+            --env AWS_ACCESS_KEY_ID \
+            --env AWS_SECRET_ACCESS_KEY \
+            --env AWS_SESSION_TOKEN \
+            --env AWS_DEFAULT_REGION="${{ vars.AWS_REGION }}" \
+            toniblyx/prowler:5.32.1 \
+            aws \
+            --services s3 \
+            --filter-region "${{ vars.AWS_REGION }}" \
+            --output-modes csv json-ocsf html \
+            --output-directory /home/prowler/output
+
+      - name: List generated reports
+        run: |
+          echo "Generated report files:"
+          find prowler-output -type f -printf '%f\n' | sort
