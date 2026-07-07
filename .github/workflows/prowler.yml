@@ -33,7 +33,10 @@ jobs:
 
       - name: Run Prowler S3 scan
         run: |
+          set -euo pipefail
+
           mkdir -p prowler-output
+          chmod 0777 prowler-output
 
           docker run --rm \
             --volume "$PWD/prowler-output:/home/prowler/output" \
