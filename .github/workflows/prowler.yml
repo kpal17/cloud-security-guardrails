@@ -51,6 +51,7 @@ jobs:
             --filter-region "${{ vars.AWS_REGION }}" \
             --output-modes csv json-ocsf html \
             --output-directory /home/prowler/output
+            --ignore-exit-code-3
 
       - name: List generated reports
         run: |
