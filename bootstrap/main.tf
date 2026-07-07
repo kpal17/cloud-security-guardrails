@@ -199,3 +199,64 @@ output "terraform_deployer_role_arn" {
   description = "Set this as GitHub variable AWS_DEPLOY_ROLE_ARN."
   value       = aws_iam_role.terraform_deployer.arn
 }
+
+data "aws_iam_policy_document" "security_auditor_trust" {
+  statement {
+    sid    = "AllowGitHubActionsFromMain"
+    effect = "Allow"
+
+    actions = [
+      "sts:AssumeRoleWithWebIdentity"
+    ]
+
+    principals {
+      type = "Federated"
+
+      identifiers = [
+        aws_iam_openid_connect_provider.github.arn
+      ]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+
+      values = [
+        "repo:kpal17/cloud-security-guardrails:ref:refs/heads/main"
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "security_auditor" {
+  name               = "security-auditor"
+  assume_role_policy = data.aws_iam_policy_document.security_auditor_trust.json
+
+  tags = {
+    Project            = "Secure Cloud Storage Guardrails"
+    ManagedBy          = "Terraform"
+    Environment        = "lab"
+    SeparationOfDuties = "runtime-audit"
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "security_auditor_security_audit" {
+  role       = aws_iam_role.security_auditor.name
+  policy_arn = "arn:aws:iam::aws:policy/SecurityAudit"
+}
+
+resource "aws_iam_role_policy_attachment" "security_auditor_view_only" {
+  role       = aws_iam_role.security_auditor.name
+  policy_arn = "arn:aws:iam::aws:policy/job-function/ViewOnlyAccess"
+}
+
+output "security_auditor_role_arn" {
+  description = "Set this as GitHub variable AWS_AUDIT_ROLE_ARN."
+  value       = aws_iam_role.security_auditor.arn
+}
