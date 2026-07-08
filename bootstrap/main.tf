@@ -261,6 +261,7 @@ output "security_auditor_role_arn" {
   value       = aws_iam_role.security_auditor.arn
 }
 
+
 resource "aws_s3_account_public_access_block" "this" {
   block_public_acls       = true
   block_public_policy     = true
