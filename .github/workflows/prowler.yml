@@ -57,3 +57,10 @@ jobs:
         run: |
           echo "Generated report files:"
           find prowler-output -type f -printf '%f\n' | sort
+      
+      - name: Upload Prowler reports
+        uses: actions/upload-artifact@v5
+        with:
+          name: prowler-s3-reports
+          path: prowler-output/
+          retention-days: 7    
